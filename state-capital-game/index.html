@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>State & Capital Map Challenge</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<style>
+  :root {
+    --bg: #f5f7fb;
+    --panel: #ffffff;
+    --ink: #1f2937;
+    --muted: #64748b;
+    --line: #cbd5e1;
+    --ok: #166534;
+    --bad: #b91c1c;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .app {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 14px 18px 24px;
+  }
+  h1 {
+    margin: 0 0 10px;
+    font-size: clamp(22px, 2.4vw, 32px);
+  }
+  .sub {
+    margin: 0 0 18px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 390px;
+    gap: 14px;
+    align-items: start;
+  }
+  .map-card, .side {
+    background: var(--panel);
+    border: 1px solid #e2e8f0;
+    border-radius: 18px;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .06);
+  }
+  .map-card { padding: 10px; }
+  .map-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1.72 / 1;
+    min-height: 0;
+    max-height: calc(100vh - 125px);
+  }
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: #eef5ff;
+    border-radius: 14px;
+  }
+  .state {
+    fill: #fff;
+    stroke: #64748b;
+    stroke-width: 1;
+    transition: fill .15s ease;
+  }
+  .state.complete { fill: #dcfce7; }
+  .state.hint {
+    fill: #fde68a;
+  }
+  .state.hint-target {
+    fill: #facc15;
+  }
+  .hint-number circle {
+    fill: #111827;
+    stroke: white;
+    stroke-width: 2.5px;
+  }
+  .hint-number text {
+    fill: #ffffff !important;
+    stroke: none !important;
+    font-size: 15px;
+    font-weight: 900;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+  }
+  .drop-marker text {
+    font-size: 12px;
+    font-weight: 700;
+    paint-order: stroke;
+    stroke: white;
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
+  .state-marker circle { fill: #1d4ed8; }
+  .capital-marker circle { fill: #7c3aed; }
+
+  .reveal-layer {
+    pointer-events: none;
+  }
+  .reveal-state-label {
+    font-size: 8px;
+    font-weight: 800;
+    text-anchor: middle;
+    fill: #0f172a;
+    paint-order: stroke;
+    stroke: rgba(255,255,255,.95);
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .reveal-capital-label {
+    font-size: 6.5px;
+    font-weight: 700;
+    text-anchor: middle;
+    fill: #7c3aed;
+    paint-order: stroke;
+    stroke: rgba(255,255,255,.95);
+    stroke-width: 2.5px;
+    stroke-linejoin: round;
+  }
+  .reveal-capital-dot {
+    fill: #7c3aed;
+    stroke: white;
+    stroke-width: 1px;
+  }
+  .side { padding: 12px; }
+  .cards-panel {
+    position: sticky;
+    top: 10px;
+    max-height: calc(100vh - 20px);
+    overflow: hidden;
+  }
+  .score-summary {
+    margin-bottom: 0;
+    background: var(--panel);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .04);
+  }
+  .score-total {
+    font-weight: 800;
+    margin-bottom: 9px;
+  }
+  .score-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .score-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 9px 10px;
+    background: #f8fafc;
+  }
+  .score-label {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 3px;
+  }
+  .score-value {
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .instructions {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+  .round-setup {
+    margin-bottom: 0;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+  }
+  .round-setup.hidden { display: none; }
+  .setup-title {
+    font-weight: 900;
+    margin-bottom: 12px;
+  }
+  .slider-row {
+    margin-bottom: 14px;
+  }
+  .slider-row:last-of-type { margin-bottom: 12px; }
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .slider-value {
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: #111827;
+    color: white;
+    font-weight: 900;
+  }
+  .round-setup input[type="range"] {
+    width: 100%;
+    cursor: pointer;
+    accent-color: #2563eb;
+  }
+  #startRound {
+    width: 100%;
+    background: #2563eb;
+    color: white;
+    margin-top: 2px;
+  }
+  .groups {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    align-items: start;
+  }
+  .card-group {
+    min-width: 0;
+  }
+  .group-title {
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 6px;
+    color: #475569;
+    text-align: center;
+  }
+  .cards {
+    display: grid;
+    gap: 5px;
+  }
+  .drag-card {
+    user-select: none;
+    cursor: grab;
+    padding: 7px 8px;
+    min-height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: white;
+    font-size: 13px;
+    line-height: 1.15;
+    font-weight: 750;
+    transition: transform .1s ease, opacity .15s ease, border-color .15s ease;
+  }
+  .drag-card:hover { transform: translateY(-1px); border-color: #94a3b8; }
+  .drag-card:active { cursor: grabbing; }
+  .drag-card.done {
+    opacity: .35;
+    cursor: default;
+    text-decoration: line-through;
+  }
+  .drag-card.selected {
+    background: #dcfce7;
+    border-color: #16a34a;
+    color: #166534;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, .18);
+  }
+  .drag-card.selected::after {
+    content: "  ✓ ready to place";
+    font-size: 10px;
+    font-weight: 800;
+    color: #166534;
+  }
+  .drag-card.state-card { border-left: 5px solid #2563eb; }
+  .drag-card.capital-card { border-left: 5px solid #7c3aed; }
+  .buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 7px;
+    margin-top: 0;
+  }
+  button {
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  #newRound { background: #111827; color: white; }
+  #hint { background: #e2e8f0; color: #111827; }
+  #reveal { background: #ede9fe; color: #5b21b6; }
+  #reveal.active { background: #7c3aed; color: white; }
+  #status {
+    margin-top: 8px;
+    min-height: 38px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.35;
+    background: #f8fafc;
+    color: #475569;
+  }
+  #status.ok { background: #f0fdf4; color: var(--ok); }
+  #status.bad { background: #fef2f2; color: var(--bad); }
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .dot {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+  .dot.state-dot { background: #1d4ed8; }
+  .dot.capital-dot { background: #7c3aed; }
+  .complete-banner {
+    display:none;
+    position:absolute;
+    inset: 20px;
+    align-items:center;
+    justify-content:center;
+    background: rgba(255,255,255,.92);
+    border-radius: 16px;
+    z-index: 4;
+    text-align:center;
+    padding: 30px;
+  }
+  .complete-banner.show { display:flex; }
+  .complete-content {
+    width: min(520px, 92%);
+  }
+  .meme-title {
+    font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+    font-size: clamp(36px, 6vw, 64px);
+    line-height: .95;
+    letter-spacing: 1px;
+    color: #fff;
+    text-transform: uppercase;
+    -webkit-text-stroke: 2px #000;
+    text-shadow:
+      -2px -2px 0 #000,
+       2px -2px 0 #000,
+      -2px  2px 0 #000,
+       2px  2px 0 #000;
+    margin-bottom: 12px;
+  }
+  .complete-meme {
+    display: block;
+    width: 100%;
+    max-height: 430px;
+    object-fit: contain;
+    margin: 0 auto 12px;
+    border-radius: 12px;
+  }
+  .complete-banner p {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 800;
+    font-size: 16px;
+  }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    .cards-panel {
+      position: static;
+      max-height: none;
+    }
+    .groups { grid-template-columns: 1fr 1fr; }
+    .below-map { grid-template-columns: 1fr; }
+    .map-wrap { max-height: none; }
+  }
+
+  .below-map {
+    display: grid;
+    grid-template-columns: minmax(240px, .85fr) minmax(300px, 1fr) minmax(360px, 1.2fr);
+    gap: 12px;
+    margin-top: 12px;
+    align-items: start;
+  }
+  .below-map > * {
+    margin: 0;
+  }
+  .game-controls {
+    background: var(--panel);
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 8px 28px rgba(15, 23, 42, .04);
+  }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>State & Capital Map Challenge</h1>
+<div class="layout">
+    <section class="map-card">
+      <div class="map-wrap" id="mapWrap">
+        <svg id="map" viewBox="0 0 960 600" aria-label="Map of the United States"></svg>
+        <div class="complete-banner" id="completeBanner">
+          <div class="complete-content">
+            <div class="meme-title">YOU DID IT!</div>
+            <img id="completeMeme" class="complete-meme" src="happy-squirrel.jpeg" alt="Completion squirrel">
+            <p id="completeText"></p>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><span class="dot state-dot"></span>State name</span>
+        <span><span class="dot capital-dot"></span>Capital</span>
+      </div>
+    </section>
+
+    <aside class="side cards-panel">
+      <div class="groups">
+        <div class="card-group">
+          <div class="group-title">States</div>
+          <div id="stateCards" class="cards"></div>
+        </div>
+        <div class="card-group">
+          <div class="group-title">Capitals</div>
+          <div id="capitalCards" class="cards"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="below-map">
+    <div class="round-setup" id="roundSetup">
+      <div class="setup-title">Choose this round</div>
+      <div class="slider-row">
+        <label class="slider-label" for="roundCount">
+          <span>Number of states + capitals</span>
+          <span class="slider-value" id="roundCountValue">5</span>
+        </label>
+        <input id="roundCount" type="range" min="1" max="10" value="5" step="1">
+      </div>
+      <button id="startRound" type="button">Start Round</button>
+    </div>
+
+    <div class="game-controls">
+      <div class="buttons">
+        <button id="hint">Hint <span id="hintCount" class="hint-count">5</span></button>
+        <button id="reveal">Reveal</button>
+        <button id="newRound">New Round</button>
+      </div>
+      <div id="status">Choose a round size, then press Start Round.</div>
+    </div>
+
+    <div class="score-summary">
+      <div class="score-total" id="progress">0 / 0 placed</div>
+      <div class="score-grid">
+        <div class="score-box">
+          <div class="score-label">States correct</div>
+          <div class="score-value" id="stateCorrect">0</div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">Capitals correct</div>
+          <div class="score-value" id="capitalCorrect">0</div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">States incorrect</div>
+          <div class="score-value" id="stateIncorrect">0</div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">Capitals incorrect</div>
+          <div class="score-value" id="capitalIncorrect">0</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const HAPPY_SQUIRREL_IMAGE = "happy-squirrel.jpeg";
+const SAD_SQUIRREL_IMAGE = "sad-squirrel.jpeg";
+
+const STATES = [
+["Alabama","Montgomery",32.377716,-86.300568],
+["Alaska","Juneau",58.301598,-134.420212],
+["Arizona","Phoenix",33.448143,-112.096962],
+["Arkansas","Little Rock",34.746613,-92.288986],
+["California","Sacramento",38.576668,-121.493629],
+["Colorado","Denver",39.739227,-104.984856],
+["Connecticut","Hartford",41.764046,-72.682198],
+["Delaware","Dover",39.157307,-75.519722],
+["Florida","Tallahassee",30.438118,-84.281296],
+["Georgia","Atlanta",33.749027,-84.388229],
+["Hawaii","Honolulu",21.307442,-157.857376],
+["Idaho","Boise",43.617775,-116.199722],
+["Illinois","Springfield",39.798363,-89.654961],
+["Indiana","Indianapolis",39.768623,-86.162643],
+["Iowa","Des Moines",41.591087,-93.603729],
+["Kansas","Topeka",39.048191,-95.677956],
+["Kentucky","Frankfort",38.186722,-84.875374],
+["Louisiana","Baton Rouge",30.457069,-91.187393],
+["Maine","Augusta",44.307167,-69.781693],
+["Maryland","Annapolis",38.978764,-76.490936],
+["Massachusetts","Boston",42.358162,-71.063698],
+["Michigan","Lansing",42.733635,-84.555328],
+["Minnesota","Saint Paul",44.955097,-93.102211],
+["Mississippi","Jackson",32.303848,-90.182106],
+["Missouri","Jefferson City",38.579201,-92.172935],
+["Montana","Helena",46.585709,-112.018417],
+["Nebraska","Lincoln",40.808075,-96.699654],
+["Nevada","Carson City",39.163914,-119.766121],
+["New Hampshire","Concord",43.206898,-71.537994],
+["New Jersey","Trenton",40.220596,-74.769913],
+["New Mexico","Santa Fe",35.68224,-105.939728],
+["New York","Albany",42.652843,-73.757874],
+["North Carolina","Raleigh",35.78043,-78.639099],
+["North Dakota","Bismarck",46.82085,-100.783318],
+["Ohio","Columbus",39.961346,-82.999069],
+["Oklahoma","Oklahoma City",35.492207,-97.503342],
+["Oregon","Salem",44.938461,-123.030403],
+["Pennsylvania","Harrisburg",40.264378,-76.883598],
+["Rhode Island","Providence",41.830914,-71.414963],
+["South Carolina","Columbia",34.000343,-81.033211],
+["South Dakota","Pierre",44.367031,-100.346405],
+["Tennessee","Nashville",36.16581,-86.784241],
+["Texas","Austin",30.27467,-97.740349],
+["Utah","Salt Lake City",40.777477,-111.888237],
+["Vermont","Montpelier",44.262436,-72.580536],
+["Virginia","Richmond",37.538857,-77.43364],
+["Washington","Olympia",47.035805,-122.905014],
+["West Virginia","Charleston",38.336246,-81.612328],
+["Wisconsin","Madison",43.074684,-89.384445],
+["Wyoming","Cheyenne",41.140259,-104.820236]
+].map(d => ({state:d[0], capital:d[1], lat:d[2], lon:d[3]}));
+
+const fipsToName = {
+"01":"Alabama","02":"Alaska","04":"Arizona","05":"Arkansas","06":"California","08":"Colorado","09":"Connecticut",
+"10":"Delaware","12":"Florida","13":"Georgia","15":"Hawaii","16":"Idaho","17":"Illinois","18":"Indiana","19":"Iowa",
+"20":"Kansas","21":"Kentucky","22":"Louisiana","23":"Maine","24":"Maryland","25":"Massachusetts","26":"Michigan",
+"27":"Minnesota","28":"Mississippi","29":"Missouri","30":"Montana","31":"Nebraska","32":"Nevada","33":"New Hampshire",
+"34":"New Jersey","35":"New Mexico","36":"New York","37":"North Carolina","38":"North Dakota","39":"Ohio",
+"40":"Oklahoma","41":"Oregon","42":"Pennsylvania","44":"Rhode Island","45":"South Carolina","46":"South Dakota",
+"47":"Tennessee","48":"Texas","49":"Utah","50":"Vermont","51":"Virginia","53":"Washington","54":"West Virginia",
+"55":"Wisconsin","56":"Wyoming"
+};
+
+const svg = d3.select("#map");
+const projection = d3.geoAlbersUsa().translate([480,300]).scale(1280);
+const path = d3.geoPath(projection);
+
+let features = [];
+let featureByName = new Map();
+let round = [];
+let stateRound = [];
+let capitalRound = [];
+let roundStarted = false;
+let placed = new Set();
+let stateMistakes = 0;
+let capitalMistakes = 0;
+let selectedCard = null;
+let hintLevel = 0;
+let hintTargetState = null;
+let hintDecoys = [];
+let revealMode = false;
+
+const statusEl = document.getElementById("status");
+
+function shuffle(a){
+  const b=[...a];
+  for(let i=b.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [b[i],b[j]]=[b[j],b[i]];
+  }
+  return b;
+}
+
+function setStatus(text,type=""){
+  statusEl.textContent=text;
+  statusEl.className=type;
+}
+
+function updateScore(){
+  const stateCorrect = [...placed].filter(x=>x.startsWith("state:")).length;
+  const capitalCorrect = [...placed].filter(x=>x.startsWith("capital:")).length;
+  const totalCards = stateRound.length + capitalRound.length;
+
+  document.getElementById("progress").textContent = `${placed.size} / ${totalCards} placed`;
+  document.getElementById("stateCorrect").textContent = stateCorrect;
+  document.getElementById("capitalCorrect").textContent = capitalCorrect;
+  document.getElementById("stateIncorrect").textContent = stateMistakes;
+  document.getElementById("capitalIncorrect").textContent = capitalMistakes;
+}
+
+function cardId(type, value){
+  return `${type}-${value.replace(/\s+/g,"-")}`;
+}
+
+function updateHintBadge(){
+  const badge=document.getElementById("hintBadge");
+  const nextCount=Math.max(1,5-hintLevel);
+  if(badge) badge.textContent=nextCount;
+}
+
+function clearHint(){
+  hintLevel=0;
+  hintTargetState=null;
+  hintDecoys=[];
+
+  svg.selectAll(".state")
+    .classed("hint",false)
+    .classed("hint-target",false);
+
+  svg.selectAll(".hint-number").remove();
+
+  updateHintBadge();
+}
+
+function clearSelectedCard(){
+  document.querySelectorAll(".drag-card.selected").forEach(el=>el.classList.remove("selected"));
+  selectedCard = null;
+  clearHint();
+}
+
+function selectCard(div, type, label, stateName){
+  if(div.classList.contains("done")) return;
+
+  const sameCard = selectedCard &&
+    selectedCard.type === type &&
+    selectedCard.value === label;
+
+  clearSelectedCard();
+
+  if(sameCard){
+    setStatus("Selection canceled. Choose another state or capital.");
+    return;
+  }
+
+  selectedCard = {type, value:label, state:stateName};
+  hintTargetState = stateName;
+  hintLevel = 0;
+  const hintBadge = document.getElementById("hintCount");
+  if(hintBadge) hintBadge.textContent = "5";
+  hintDecoys = shuffle(STATES.map(s=>s.state).filter(s=>s!==stateName));
+  div.classList.add("selected");
+  setStatus(`${label} is selected. Now click where you want to place it on the map.`,"ok");
+}
+
+function makeCard(type, label, stateName){
+  const div=document.createElement("div");
+  div.className=`drag-card ${type}-card`;
+  div.id=cardId(type,label);
+  div.draggable=true;
+  div.textContent=label;
+  div.dataset.type=type;
+  div.dataset.value=label;
+  div.dataset.state=stateName;
+
+  div.addEventListener("click", ()=>{
+    selectCard(div,type,label,stateName);
+  });
+
+  div.addEventListener("dragstart", e=>{
+    if(div.classList.contains("done")) { e.preventDefault(); return; }
+    clearSelectedCard();
+    e.dataTransfer.setData("text/plain", JSON.stringify({
+      type, value:label, state:stateName
+    }));
+    e.dataTransfer.effectAllowed="move";
+  });
+  return div;
+}
+
+function newRound(){
+  if(revealMode) toggleReveal(false);
+  clearSelectedCard();
+  placed.clear();
+  stateMistakes=0;
+  capitalMistakes=0;
+  svg.selectAll(".drop-marker").remove();
+  svg.selectAll(".state").classed("complete",false).classed("hint",false).classed("hint-target",false);
+  svg.selectAll(".hint-number").remove();
+  document.getElementById("completeBanner").classList.remove("show");
+
+  const roundCount = Number(document.getElementById("roundCount")?.value || 5);
+
+  round = shuffle(STATES).slice(0,roundCount);
+  stateRound = [...round];
+  capitalRound = [...round];
+
+  const stateCards=document.getElementById("stateCards");
+  const capitalCards=document.getElementById("capitalCards");
+  stateCards.innerHTML="";
+  capitalCards.innerHTML="";
+
+  shuffle(stateRound).forEach(x=>stateCards.appendChild(makeCard("state",x.state,x.state)));
+  shuffle(capitalRound).forEach(x=>capitalCards.appendChild(makeCard("capital",x.capital,x.state)));
+
+  roundStarted = true;
+  document.getElementById("roundSetup")?.classList.add("hidden");
+  setStatus("Choose a state or capital to begin.");
+  updateScore();
+}
+
+function markCardDone(type, value){
+  const el=document.getElementById(cardId(type,value));
+  if(el){ el.classList.add("done"); el.draggable=false; }
+}
+
+function drawMarker(type, label, x, y){
+  const g=svg.append("g")
+    .attr("class",`drop-marker ${type}-marker`)
+    .attr("transform",`translate(${x},${y})`);
+
+  g.append("circle")
+    .attr("r", type==="state" ? 6 : 5);
+
+  g.append("text")
+    .attr("x",8)
+    .attr("y",4)
+    .text(label);
+}
+
+function directionFrom(cx,cy,x,y){
+  const dx=x-cx, dy=y-cy;
+  if(Math.abs(dx) > Math.abs(dy)) return dx >= 0 ? "east" : "west";
+  return dy >= 0 ? "south" : "north";
+}
+
+function nearActualCapital(stateName, dropXY){
+  const item = STATES.find(s=>s.state===stateName);
+  if(!item) return false;
+
+  const capitalXY = projection([item.lon,item.lat]);
+  if(!capitalXY) return false;
+
+  const feat = featureByName.get(stateName);
+  if(!feat) return false;
+
+  const bounds = path.bounds(feat);
+  const width = Math.abs(bounds[1][0]-bounds[0][0]);
+  const height = Math.abs(bounds[1][1]-bounds[0][1]);
+  const stateSize = Math.max(width,height);
+
+  const tolerance = Math.max(16, Math.min(42, stateSize * 0.22));
+  return Math.hypot(dropXY[0]-capitalXY[0], dropXY[1]-capitalXY[1]) <= tolerance;
+}
+
+function capitalDirectionOK(stateName, dropXY){
+  const item = STATES.find(s=>s.state===stateName);
+  const feat = featureByName.get(stateName);
+  if(!item || !feat) return false;
+
+  const centroid = path.centroid(feat);
+  const capitalXY = projection([item.lon,item.lat]);
+  if(!capitalXY || !isFinite(centroid[0]) || !isFinite(centroid[1])) return true;
+
+  const actualDir = directionFrom(centroid[0],centroid[1],capitalXY[0],capitalXY[1]);
+  const dropDir = directionFrom(centroid[0],centroid[1],dropXY[0],dropXY[1]);
+  return actualDir === dropDir;
+}
+
+function maybeCompleteState(stateName){
+  const item = STATES.find(x=>x.state===stateName);
+  if(!item) return;
+
+  const needsState = stateRound.some(x=>x.state===stateName);
+  const needsCapital = capitalRound.some(x=>x.state===stateName);
+
+  const stateDone = !needsState || placed.has(`state:${stateName}`);
+  const capitalDone = !needsCapital || placed.has(`capital:${item.capital}`);
+
+  if(stateDone && capitalDone){
+    svg.selectAll(".state")
+      .filter(d=>d.properties.name===stateName)
+      .classed("complete",true);
+  }
+}
+
+function maybeFinish(){
+  const totalCards = stateRound.length + capitalRound.length;
+  if(roundStarted && totalCards > 0 && placed.size===totalCards){
+    const totalMistakes = stateMistakes + capitalMistakes;
+    const stateCorrect = stateRound.length;
+    const capitalCorrect = capitalRound.length;
+
+    const meme = document.getElementById("completeMeme");
+    const title = document.querySelector(".meme-title");
+
+    if(meme){
+      meme.src = stateMistakes > 3 ? SAD_SQUIRREL_IMAGE : HAPPY_SQUIRREL_IMAGE;
+    }
+
+    if(title){
+      title.textContent = stateMistakes > 3 ? "YOU FINISHED!" : "YOU DID IT!";
+    }
+
+    document.getElementById("completeText").textContent =
+      totalMistakes===0
+        ? `Perfect score — ${stateCorrect} state${stateCorrect===1?"":"s"} and ${capitalCorrect} capital${capitalCorrect===1?"":"s"} correct with no mistakes!`
+        : `States: ${stateCorrect} correct, ${stateMistakes} incorrect. Capitals: ${capitalCorrect} correct, ${capitalMistakes} incorrect.`;
+
+    document.getElementById("completeBanner").classList.add("show");
+  }
+}
+
+function getSvgPoint(event){
+  const svgNode = svg.node();
+  const pt = svgNode.createSVGPoint();
+  pt.x = event.clientX;
+  pt.y = event.clientY;
+
+  const ctm = svgNode.getScreenCTM();
+  if(!ctm) return [0,0];
+
+  const local = pt.matrixTransform(ctm.inverse());
+  return [local.x, local.y];
+}
+
+function pointToSegmentDistance(px,py,x1,y1,x2,y2){
+  const vx=x2-x1, vy=y2-y1;
+  const wx=px-x1, wy=py-y1;
+  const c1=vx*wx+vy*wy;
+  if(c1<=0) return Math.hypot(px-x1,py-y1);
+  const c2=vx*vx+vy*vy;
+  if(c2<=c1) return Math.hypot(px-x2,py-y2);
+  const b=c1/c2;
+  const bx=x1+b*vx, by=y1+b*vy;
+  return Math.hypot(px-bx,py-by);
+}
+
+function projectedPolygonDistance(feat, x, y){
+  let best=Infinity;
+
+  function walkCoords(coords){
+    if(!Array.isArray(coords) || !coords.length) return;
+
+    if(typeof coords[0][0] === "number"){
+      for(let i=0;i<coords.length-1;i++){
+        const a=projection(coords[i]);
+        const b=projection(coords[i+1]);
+        if(!a || !b) continue;
+        best=Math.min(best, pointToSegmentDistance(x,y,a[0],a[1],b[0],b[1]));
+      }
+      return;
+    }
+
+    coords.forEach(walkCoords);
+  }
+
+  walkCoords(feat.geometry.coordinates);
+  return best;
+}
+
+function clickMatchesState(feat, lonlat, x, y){
+  if(d3.geoContains(feat,lonlat)) return true;
+
+  const bounds = path.bounds(feat);
+  const width = bounds[1][0]-bounds[0][0];
+  const height = bounds[1][1]-bounds[0][1];
+
+  let tolerance = 0;
+  const minDim = Math.min(width,height);
+
+  if(minDim < 8) tolerance = 10;
+  else if(minDim < 14) tolerance = 7;
+  else if(minDim < 22) tolerance = 4;
+
+  if(tolerance===0) return false;
+
+  return projectedPolygonDistance(feat,x,y) <= tolerance;
+}
+
+function stateNameFromEvent(event){
+  let node = event.target;
+
+  while(node && node !== svg.node()){
+    if(node.classList && node.classList.contains("state")){
+      const datum = d3.select(node).datum();
+      if(datum && datum.properties && datum.properties.name){
+        return datum.properties.name;
+      }
+    }
+    node = node.parentNode;
+  }
+
+  return null;
+}
+
+function isTinyState(feat){
+  const bounds = path.bounds(feat);
+  const width = bounds[1][0] - bounds[0][0];
+  const height = bounds[1][1] - bounds[0][1];
+  return Math.min(width,height) < 22;
+}
+
+function placeCard(data, x, y, clickedStateName=null){
+  const lonlat=projection.invert([x,y]);
+  if(!lonlat){
+    if(data.type==="state") stateMistakes++;
+    else capitalMistakes++;
+    updateScore();
+    setStatus("That spot is outside the U.S. map. Try again.","bad");
+    return false;
+  }
+
+  const feat=featureByName.get(data.state);
+
+  const correctStateClicked = clickedStateName
+    ? clickedStateName === data.state
+    : (feat && clickMatchesState(feat,lonlat,x,y));
+
+  if(!feat || !correctStateClicked){
+    if(data.type==="state") stateMistakes++;
+    else capitalMistakes++;
+    updateScore();
+    setStatus(`Not quite — ${data.value} must be placed inside ${data.state}.`,"bad");
+    return false;
+  }
+
+  if(
+    data.type==="capital" &&
+    !nearActualCapital(data.state,[x,y]) &&
+    !isTinyState(feat) &&
+    !capitalDirectionOK(data.state,[x,y])
+  ){
+    const item=STATES.find(s=>s.state===data.state);
+    const centroid=path.centroid(feat);
+    const capXY=projection([item.lon,item.lat]);
+    const needed=directionFrom(centroid[0],centroid[1],capXY[0],capXY[1]);
+    capitalMistakes++;
+    updateScore();
+    setStatus(`${data.value} is in ${data.state}, but try the ${needed}ern part of the state.`,"bad");
+    return false;
+  }
+
+  const key=`${data.type}:${data.value}`;
+  if(placed.has(key)) return true;
+
+  placed.add(key);
+  markCardDone(data.type,data.value);
+  drawMarker(data.type,data.value,x,y);
+  maybeCompleteState(data.state);
+  updateScore();
+
+  if(data.type==="capital"){
+    if(nearActualCapital(data.state,[x,y])){
+      setStatus(`Correct — that is right near ${data.value}.`,"ok");
+    } else {
+      setStatus(`Correct — ${data.value} is in the right general part of ${data.state}.`,"ok");
+    }
+  } else {
+    setStatus(`Correct — ${data.value} is in the right place.`,"ok");
+  }
+
+  maybeFinish();
+  return true;
+}
+
+svg.on("click", function(event){
+  if(!selectedCard) return;
+  const [x,y]=getSvgPoint(event);
+  const data={...selectedCard};
+  const clickedStateName = stateNameFromEvent(event);
+  const success=placeCard(data,x,y,clickedStateName);
+
+  if(success){
+    clearSelectedCard();
+  } else {
+    const el=document.getElementById(cardId(data.type,data.value));
+    if(el) el.classList.add("selected");
+    selectedCard=data;
+  }
+});
+
+svg.on("dragover", e=>e.preventDefault());
+
+svg.on("drop", function(event){
+  event.preventDefault();
+
+  let data;
+  try { data=JSON.parse(event.dataTransfer.getData("text/plain")); }
+  catch { return; }
+
+  const [x,y]=getSvgPoint(event);
+  const success = placeCard(data,x,y);
+  if(success) clearHint();
+});
+
+function drawRevealLayer(){
+  svg.selectAll(".reveal-layer").remove();
+  const layer = svg.append("g").attr("class","reveal-layer");
+
+  features.forEach(feat=>{
+    const name = feat.properties.name;
+    const item = STATES.find(s=>s.state===name);
+    if(!item) return;
+
+    let c = path.centroid(feat);
+    if(!isFinite(c[0]) || !isFinite(c[1])) return;
+
+    layer.append("text")
+      .attr("class","reveal-state-label")
+      .attr("x",c[0])
+      .attr("y",c[1]-3)
+      .text(name);
+
+    const p = projection([item.lon,item.lat]);
+    if(p){
+      layer.append("circle")
+        .attr("class","reveal-capital-dot")
+        .attr("cx",p[0])
+        .attr("cy",p[1])
+        .attr("r",2.3);
+
+      layer.append("text")
+        .attr("class","reveal-capital-label")
+        .attr("x",p[0])
+        .attr("y",p[1]+9)
+        .text(item.capital);
+    }
+  });
+}
+
+function toggleReveal(force){
+  revealMode = typeof force === "boolean" ? force : !revealMode;
+  const btn = document.getElementById("reveal");
+
+  if(revealMode){
+    clearSelectedCard();
+    clearHint();
+    drawRevealLayer();
+    btn.classList.add("active");
+    btn.textContent = "Hide";
+    setStatus("Study mode: all 50 state names and capitals are shown on the map.","ok");
+  } else {
+    svg.selectAll(".reveal-layer").remove();
+    btn.classList.remove("active");
+    btn.textContent = "Reveal";
+    setStatus("Reveal hidden. Continue the quiz.");
+  }
+}
+
+document.getElementById("reveal")?.addEventListener("click",()=>toggleReveal());
+
+document.getElementById("hint")?.addEventListener("click",()=>{
+  if(!selectedCard){
+    setStatus("First select a state or capital. Then Hint can narrow down where it belongs.","bad");
+    return;
+  }
+
+  hintLevel = Math.min(hintLevel + 1, 5);
+  const totalChoices = Math.max(1, 6 - hintLevel);
+  const decoyCount = totalChoices - 1;
+
+  const shownStates = [hintTargetState, ...hintDecoys.slice(0, decoyCount)];
+  const numberedStates = shuffle(shownStates);
+
+  svg.selectAll(".state")
+    .classed("hint", d => numberedStates.includes(d.properties.name))
+    .classed("hint-target", false);
+
+  svg.selectAll(".hint-number").remove();
+
+  numberedStates.forEach((stateName, index)=>{
+    const feat = featureByName.get(stateName);
+    if(!feat) return;
+
+    const c = path.centroid(feat);
+    if(!isFinite(c[0]) || !isFinite(c[1])) return;
+
+    const g = svg.append("g")
+      .attr("class","hint-number")
+      .attr("transform",`translate(${c[0]},${c[1]})`)
+      .style("pointer-events","none");
+
+    g.append("circle").attr("r",13);
+    g.append("text")
+      .attr("x",0)
+      .attr("y",0)
+      .attr("dy","0.35em")
+      .attr("text-anchor","middle")
+      .attr("fill","#ffffff")
+      .attr("font-size",15)
+      .attr("font-weight",900)
+      .text(index + 1);
+  });
+
+  const nextCount = Math.max(1, totalChoices - 1);
+  const badge = document.getElementById("hintCount");
+  if(badge) badge.textContent = nextCount;
+
+  if(totalChoices === 1){
+    setStatus(`Final hint: the highlighted state numbered 1 is where ${selectedCard.value} belongs.`,"ok");
+  } else {
+    setStatus(`Hint: ${totalChoices} possible states are numbered on the map. Which number do you think is correct?`,"ok");
+  }
+});
+
+document.getElementById("newRound")?.addEventListener("click",()=>{
+  clearSelectedCard();
+  if(revealMode) toggleReveal(false);
+  roundStarted = false;
+  document.getElementById("completeBanner")?.classList.remove("show");
+  document.getElementById("roundSetup")?.classList.remove("hidden");
+  setStatus("Choose the round size for the next round.");
+});
+
+const roundCountSlider = document.getElementById("roundCount");
+
+roundCountSlider?.addEventListener("input",()=>{
+  document.getElementById("roundCountValue").textContent = roundCountSlider.value;
+});
+
+document.getElementById("startRound")?.addEventListener("click",newRound);
+
+d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us=>{
+  features=topojson.feature(us,us.objects.states).features
+    .map(f=>{
+      f.properties.name=fipsToName[String(f.id).padStart(2,"0")] || "";
+      return f;
+    })
+    .filter(f=>f.properties.name);
+
+  featureByName=new Map(features.map(f=>[f.properties.name,f]));
+
+  svg.selectAll(".state")
+    .data(features)
+    .join("path")
+    .attr("class","state")
+    .attr("d",path);
+
+  svg.append("path")
+    .datum(topojson.mesh(us,us.objects.states,(a,b)=>a!==b))
+    .attr("fill","none")
+    .attr("stroke","#475569")
+    .attr("stroke-width",.55)
+    .style("pointer-events","none")
+    .attr("d",path);
+
+  document.getElementById("roundSetup")?.classList.remove("hidden");
+  document.getElementById("roundCountValue").textContent = document.getElementById("roundCount").value;
+  setStatus("Choose the round size, then press Start Round.");
+  updateScore();
+}).catch(err=>{
+  console.error(err);
+  setStatus("The map could not load. If you opened this file directly from Downloads, your browser may be blocking external map data. Try opening it in Chrome/Firefox, or serve the folder with a tiny local web server.","bad");
+});
+</script>
+</body>
+</html>
